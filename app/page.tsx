@@ -2,6 +2,7 @@ import Image from "next/image";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
+import PhotoCard from "./components/PhotoCard";
 
 type ColorData = {
   h: number;
@@ -95,18 +96,7 @@ export default async function Home() {
       <div className="p-8">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {photos.map((photo) => (
-            <div
-              key={photo}
-              className="relative aspect-square overflow-hidden rounded-lg"
-            >
-              <Image
-                src={`/photos/${photo}`}
-                alt={photo}
-                fill
-                className="object-cover"
-                sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              />
-            </div>
+            <PhotoCard key={photo} src={`/photos/${photo}`} alt={photo} />
           ))}
         </div>
       </div>
