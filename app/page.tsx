@@ -1,65 +1,115 @@
 import Image from "next/image";
+import fs from "fs";
+import path from "path";
+import sharp from "sharp";
 
-export default function Home() {
+type ColorData = {
+  h: number;
+  s: number;
+  l: number;
+};
+
+function rgbToHsl(r: number, g: number, b: number): ColorData {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        break;
+      case g:
+        h = ((b - r) / d + 2) / 6;
+        break;
+      case b:
+        h = ((r - g) / d + 4) / 6;
+        break;
+    }
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+async function getPhotosSortedByColor() {
+  const photosDir = path.join(process.cwd(), "public/photos");
+  const files = fs.readdirSync(photosDir).filter((file) => /\.webp$/i.test(file));
+
+  // Extract dominant color from each image
+  const photosWithColors = await Promise.all(
+    files.map(async (file) => {
+      const filePath = path.join(photosDir, file);
+      const { dominant } = await sharp(filePath).stats();
+      const color = rgbToHsl(dominant.r, dominant.g, dominant.b);
+      return { file, color };
+    })
+  );
+
+  // Sort by lightness group, then hue, then saturation
+  return photosWithColors
+    .sort((a, b) => {
+      const colorA = a.color;
+      const colorB = b.color;
+
+      // Group by lightness first (dark, mid, light)
+      const lightnessGroupA = colorA.l < 20 ? 0 : colorA.l > 80 ? 2 : 1;
+      const lightnessGroupB = colorB.l < 20 ? 0 : colorB.l > 80 ? 2 : 1;
+      if (lightnessGroupA !== lightnessGroupB) return lightnessGroupA - lightnessGroupB;
+
+      // Within each group, sort by hue
+      if (Math.abs(colorA.h - colorB.h) > 10) return colorA.h - colorB.h;
+
+      // Then by saturation
+      if (Math.abs(colorA.s - colorB.s) > 10) return colorB.s - colorA.s;
+
+      // Finally by lightness
+      return colorA.l - colorB.l;
+    })
+    .map((p) => p.file);
+}
+
+export default async function Home() {
+  const photos = await getPhotosSortedByColor();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+    <main>
+      {/* Hero Section */}
+      <div className="relative h-screen w-full">
         <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
+          src="/photos/4.8.19-17.webp"
+          alt="Hero"
+          fill
           priority
+          unoptimized
+          className="object-cover"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+      </div>
+
+      {/* Photo Grid */}
+      <div className="p-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {photos.map((photo) => (
+            <div
+              key={photo}
+              className="relative aspect-square overflow-hidden rounded-lg"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              <Image
+                src={`/photos/${photo}`}
+                alt={photo}
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              />
+            </div>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
