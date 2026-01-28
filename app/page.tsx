@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import PhotoCard from "./components/PhotoCard";
+import ParticleCloud from "./components/ParticleCloud";
 
 type ColorData = {
   h: number;
@@ -40,7 +41,9 @@ function rgbToHsl(r: number, g: number, b: number): ColorData {
 
 async function getPhotosSortedByColor() {
   const photosDir = path.join(process.cwd(), "public/photos");
-  const files = fs.readdirSync(photosDir).filter((file) => /\.webp$/i.test(file));
+  const files = fs
+    .readdirSync(photosDir)
+    .filter((file) => /\.webp$/i.test(file));
 
   // Extract dominant color from each image
   const photosWithColors = await Promise.all(
@@ -49,7 +52,7 @@ async function getPhotosSortedByColor() {
       const { dominant } = await sharp(filePath).stats();
       const color = rgbToHsl(dominant.r, dominant.g, dominant.b);
       return { file, color };
-    })
+    }),
   );
 
   // Sort by lightness group, then hue, then saturation
@@ -61,7 +64,8 @@ async function getPhotosSortedByColor() {
       // Group by lightness first (dark, mid, light)
       const lightnessGroupA = colorA.l < 20 ? 0 : colorA.l > 80 ? 2 : 1;
       const lightnessGroupB = colorB.l < 20 ? 0 : colorB.l > 80 ? 2 : 1;
-      if (lightnessGroupA !== lightnessGroupB) return lightnessGroupA - lightnessGroupB;
+      if (lightnessGroupA !== lightnessGroupB)
+        return lightnessGroupA - lightnessGroupB;
 
       // Within each group, sort by hue
       if (Math.abs(colorA.h - colorB.h) > 10) return colorA.h - colorB.h;
@@ -80,24 +84,17 @@ export default async function Home() {
 
   return (
     <main>
-      {/* Hero Section */}
-      <div className="relative h-screen w-full">
-        <Image
-          src="/photos/4.8.19-17.webp"
-          alt="Hero"
-          fill
-          priority
-          unoptimized
-          className="object-cover"
+      {/* Hero Section with Particle Cloud */}
+      <div className="relative h-screen w-full bg-black overflow-hidden">
+        <ParticleCloud 
+          particleCount={10000} 
+          colorScheme="aurora" 
+          className="absolute inset-0"
         />
-      </div>
-
-      {/* Photo Grid */}
-      <div className="p-8">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {photos.map((photo) => (
-            <PhotoCard key={photo} src={`/photos/${photo}`} alt={photo} />
-          ))}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <h1 className="text-white text-6xl font-light tracking-wider opacity-80">
+            {/* Optional title overlay */}
+          </h1>
         </div>
       </div>
     </main>

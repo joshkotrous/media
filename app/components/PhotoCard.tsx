@@ -1,6 +1,17 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useCallback } from "react";
+
+// Shared WebGL context - only one for the entire page
+let sharedCanvas: HTMLCanvasElement | null = null;
+let sharedGl: WebGLRenderingContext | null = null;
+let sharedProgram: WebGLProgram | null = null;
+let activeCard: HTMLDivElement | null = null;
+let animationId: number = 0;
+let currentImage: HTMLImageElement | null = null;
+let mousePos = { x: 0.5, y: 0.5 };
+let hoverValue = 0;
+let timeValue = 0;
 
 const vertexShader = `
   attribute vec2 a_position;
@@ -12,115 +23,211 @@ const vertexShader = `
   }
 `;
 
-// Hover overlay shader - white dissolve effect around mouse
-const hoverFragmentShader = `
-  precision mediump float;
+const fragmentShader = `
+  precision highp float;
+  uniform sampler2D u_image;
   uniform vec2 u_mouse;
   uniform float u_radius;
-  uniform float u_time;
   uniform float u_hover;
+  uniform float u_time;
+  uniform float u_seed;
+  uniform float u_edgeWidth;
+  uniform float u_cornerRadius;
+  uniform vec2 u_imageAspect;
   varying vec2 v_texCoord;
 
   float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
   }
+  
+  float sdRoundedBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+  }
 
   void main() {
     vec2 uv = v_texCoord;
-    float dist = distance(uv, u_mouse);
     
-    float effect = smoothstep(u_radius, 0.0, dist) * u_hover;
-    
-    if (effect < 0.01) {
-      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-      return;
+    // Simulate object-cover
+    vec2 imageUV = uv;
+    float imageRatio = u_imageAspect.x;
+    if (imageRatio > 1.0) {
+      float scale = 1.0 / imageRatio;
+      imageUV.x = uv.x * scale + (1.0 - scale) * 0.5;
+    } else if (imageRatio < 1.0) {
+      float scale = imageRatio;
+      imageUV.y = uv.y * scale + (1.0 - scale) * 0.5;
     }
     
-    float noise = random(uv + u_time * 0.1);
-    float dissolve = smoothstep(effect - 0.2, effect + 0.2, noise);
-    float whiteFade = smoothstep(u_radius, 0.0, dist);
+    vec4 imageColor = texture2D(u_image, imageUV);
+    vec3 white = vec3(1.0, 1.0, 1.0);
     
-    float alpha = effect * (1.0 - dissolve * 0.7) * whiteFade;
+    // Edge dissolve
+    vec2 centered = uv - 0.5;
+    float dist = sdRoundedBox(centered, vec2(0.5, 0.5), u_cornerRadius);
+    float distFromEdge = -dist;
+    float edgeFactor = smoothstep(0.0, u_edgeWidth, distFromEdge);
     
-    gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+    float noise1 = abs(random(uv * 500.0 + u_seed));
+    float noise2 = abs(random(uv * 800.0 + u_seed + 50.0));
+    float noise3 = abs(random(uv * 1200.0 + u_seed + 100.0));
+    float edgeNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+    
+    float showImage = step(edgeNoise, edgeFactor);
+    float insideShape = step(dist, 0.0);
+    
+    // Hover dissolve with floating particles
+    float mouseDist = distance(uv, u_mouse);
+    float hoverEffect = smoothstep(u_radius, 0.0, mouseDist) * u_hover;
+    
+    float floatSpeed = u_time * 0.3;
+    vec2 floatOffset1 = vec2(sin(floatSpeed + uv.y * 3.0) * 0.02, -floatSpeed * 0.15);
+    vec2 floatOffset2 = vec2(cos(floatSpeed * 0.7 + uv.x * 4.0) * 0.015, -floatSpeed * 0.12);
+    vec2 floatOffset3 = vec2(sin(floatSpeed * 1.3 + uv.y * 2.0 + uv.x * 2.0) * 0.025, -floatSpeed * 0.1);
+    
+    float hoverNoise1 = abs(random((uv + floatOffset1) * 400.0));
+    float hoverNoise2 = abs(random((uv + floatOffset2) * 700.0));
+    float hoverNoise3 = abs(random((uv + floatOffset3) * 1100.0));
+    float hoverNoise = hoverNoise1 * 0.4 + hoverNoise2 * 0.35 + hoverNoise3 * 0.25;
+    
+    float showWhiteFromHover = step(hoverNoise, hoverEffect);
+    
+    vec3 finalColor = imageColor.rgb;
+    finalColor = mix(white, finalColor, showImage);
+    finalColor = mix(finalColor, white, showWhiteFromHover);
+    finalColor = mix(white, finalColor, insideShape);
+    
+    gl_FragColor = vec4(finalColor, 1.0);
   }
 `;
 
-// Cache for dissolve masks per seed
-const dissolveMaskCache = new Map<number, string>();
+function initSharedCanvas() {
+  if (sharedCanvas) return;
+  
+  sharedCanvas = document.createElement("canvas");
+  sharedCanvas.width = 512;
+  sharedCanvas.height = 512;
+  sharedCanvas.style.cssText = `
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+  `;
+  document.body.appendChild(sharedCanvas);
+  
+  const gl = sharedCanvas.getContext("webgl", { premultipliedAlpha: false, alpha: true });
+  if (!gl) return;
+  sharedGl = gl;
+  
+  // Create shaders
+  const vShader = gl.createShader(gl.VERTEX_SHADER)!;
+  gl.shaderSource(vShader, vertexShader);
+  gl.compileShader(vShader);
+  
+  const fShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+  gl.shaderSource(fShader, fragmentShader);
+  gl.compileShader(fShader);
+  
+  const program = gl.createProgram()!;
+  gl.attachShader(program, vShader);
+  gl.attachShader(program, fShader);
+  gl.linkProgram(program);
+  gl.useProgram(program);
+  sharedProgram = program;
+  
+  // Geometry
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const posLoc = gl.getAttribLocation(program, "a_position");
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  const texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]), gl.STATIC_DRAW);
+  const texLoc = gl.getAttribLocation(program, "a_texCoord");
+  gl.enableVertexAttribArray(texLoc);
+  gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  // Texture
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+}
 
-// Generate a dissolve mask that matches the shader effect
-function generateDissolveMask(seed: number): string {
-  const cached = dissolveMaskCache.get(seed);
-  if (cached) return cached;
+function render() {
+  if (!sharedGl || !sharedProgram || !sharedCanvas || !activeCard) return;
   
-  const size = 1024; // Higher resolution for finer particles
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-  const imageData = ctx.createImageData(size, size);
+  const gl = sharedGl;
+  const program = sharedProgram;
   
-  // Seeded random function matching shader
-  const random = (x: number, y: number) => {
-    const dot = x * 12.9898 + y * 78.233 + seed;
-    return (Math.sin(dot) * 43758.5453123) % 1;
-  };
+  // Position canvas over active card
+  const rect = activeCard.getBoundingClientRect();
+  sharedCanvas.style.left = `${rect.left}px`;
+  sharedCanvas.style.top = `${rect.top}px`;
+  sharedCanvas.style.width = `${rect.width}px`;
+  sharedCanvas.style.height = `${rect.height}px`;
   
-  const edgeWidth = 0.07; // Dissolve width from edge
-  const cornerRadius = 0.1; // Rounded corner radius (larger = more rounded)
+  // Animate hover
+  hoverValue += (1 - hoverValue) * 0.12;
+  timeValue += 0.016;
   
-  // Signed distance function for rounded rectangle
-  const sdRoundedBox = (px: number, py: number, bx: number, by: number, r: number) => {
-    const qx = Math.abs(px) - bx + r;
-    const qy = Math.abs(py) - by + r;
-    return Math.min(Math.max(qx, qy), 0) + Math.sqrt(Math.max(qx, 0) ** 2 + Math.max(qy, 0) ** 2) - r;
-  };
+  gl.viewport(0, 0, sharedCanvas.width, sharedCanvas.height);
+  gl.clearColor(1, 1, 1, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
   
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      
-      // Normalize to 0-1
-      const ux = x / size;
-      const uy = y / size;
-      
-      // Center coordinates (-0.5 to 0.5)
-      const cx = ux - 0.5;
-      const cy = uy - 0.5;
-      
-      // Distance from rounded rectangle edge
-      const dist = sdRoundedBox(cx, cy, 0.5, 0.5, cornerRadius);
-      const distFromEdge = -dist;
-      
-      // Edge factor (0 at edge, 1 in center)
-      const edgeFactor = Math.max(0, Math.min(1, distFromEdge / edgeWidth));
-      
-      // Generate noise (very high frequency for fine particles)
-      const noise1 = Math.abs(random(ux * 500, uy * 500));
-      const noise2 = Math.abs(random(ux * 800 + 50, uy * 800 + 50));
-      const noise3 = Math.abs(random(ux * 1200 + 100, uy * 1200 + 100));
-      const noise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
-      
-      // Dissolve: if noise < edgeFactor, pixel is visible
-      const dissolved = noise < edgeFactor ? 255 : 0;
-      
-      // Hard cutoff outside rounded rect
-      const inside = dist <= 0 ? 1 : 0;
-      
-      const alpha = dissolved * inside;
-      
-      imageData.data[i] = 255;
-      imageData.data[i + 1] = 255;
-      imageData.data[i + 2] = 255;
-      imageData.data[i + 3] = alpha;
-    }
+  const imageAspect = currentImage ? currentImage.width / currentImage.height : 1;
+  
+  gl.uniform2f(gl.getUniformLocation(program, "u_mouse"), mousePos.x, mousePos.y);
+  gl.uniform1f(gl.getUniformLocation(program, "u_radius"), 0.15);
+  gl.uniform1f(gl.getUniformLocation(program, "u_hover"), hoverValue);
+  gl.uniform1f(gl.getUniformLocation(program, "u_time"), timeValue);
+  gl.uniform1f(gl.getUniformLocation(program, "u_seed"), Math.random() * 0.001 + (activeCard?.dataset.seed ? parseFloat(activeCard.dataset.seed) : 0));
+  gl.uniform1f(gl.getUniformLocation(program, "u_edgeWidth"), 0.07);
+  gl.uniform1f(gl.getUniformLocation(program, "u_cornerRadius"), 0.08);
+  gl.uniform2f(gl.getUniformLocation(program, "u_imageAspect"), imageAspect, 1.0);
+  
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  
+  animationId = requestAnimationFrame(render);
+}
+
+function activateCard(card: HTMLDivElement, img: HTMLImageElement) {
+  initSharedCanvas();
+  if (!sharedGl || !sharedCanvas) return;
+  
+  activeCard = card;
+  currentImage = img;
+  hoverValue = 0;
+  
+  // Load image into texture
+  sharedGl.texImage2D(sharedGl.TEXTURE_2D, 0, sharedGl.RGBA, sharedGl.RGBA, sharedGl.UNSIGNED_BYTE, img);
+  
+  sharedCanvas.style.opacity = "1";
+  
+  if (!animationId) {
+    render();
   }
-  
-  ctx.putImageData(imageData, 0, 0);
-  const url = canvas.toDataURL();
-  dissolveMaskCache.set(seed, url);
-  return url;
+}
+
+function deactivateCard() {
+  if (sharedCanvas) {
+    sharedCanvas.style.opacity = "0";
+  }
+  activeCard = null;
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = 0;
+  }
+}
+
+function updateMouse(x: number, y: number) {
+  mousePos = { x, y };
 }
 
 interface PhotoCardProps {
@@ -129,175 +236,48 @@ interface PhotoCardProps {
 }
 
 export default function PhotoCard({ src, alt }: PhotoCardProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>(0);
-  const [isHovered, setIsHovered] = useState(false);
-  const [showCanvas, setShowCanvas] = useState(false);
-  const [dissolveMask, setDissolveMask] = useState<string | null>(null);
-  const mousePos = useRef({ x: 0.5, y: 0.5 });
-  const hoverValue = useRef(0);
-  const timeRef = useRef(0);
-  const seedRef = useRef(Math.floor(Math.random() * 10000));
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const seedRef = useRef(Math.random() * 1000);
 
-  // Generate dissolve mask on mount (unique per card)
   useEffect(() => {
-    setDissolveMask(generateDissolveMask(seedRef.current));
-  }, []);
-
-  // Initialize WebGL when canvas mounts (after hover)
-  useEffect(() => {
-    if (!showCanvas) return;
-    
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Small delay to ensure canvas is in DOM
-    const initTimeout = setTimeout(() => {
-      const gl = canvas.getContext("webgl", { premultipliedAlpha: false, alpha: true });
-      if (!gl) {
-        console.warn("WebGL not available");
-        return;
-      }
-
-      // Create shaders
-      const vShader = gl.createShader(gl.VERTEX_SHADER)!;
-      gl.shaderSource(vShader, vertexShader);
-      gl.compileShader(vShader);
-
-      const fShader = gl.createShader(gl.FRAGMENT_SHADER)!;
-      gl.shaderSource(fShader, hoverFragmentShader);
-      gl.compileShader(fShader);
-
-      // Create program
-      const program = gl.createProgram()!;
-      gl.attachShader(program, vShader);
-      gl.attachShader(program, fShader);
-      gl.linkProgram(program);
-      gl.useProgram(program);
-
-      // Set up geometry
-      const positionBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
-        gl.STATIC_DRAW
-      );
-
-      const positionLocation = gl.getAttribLocation(program, "a_position");
-      gl.enableVertexAttribArray(positionLocation);
-      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-      const texCoordBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]),
-        gl.STATIC_DRAW
-      );
-
-      const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
-      gl.enableVertexAttribArray(texCoordLocation);
-      gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-      // Start with effect already partially visible to avoid flicker
-      hoverValue.current = 0.3;
-      timeRef.current = 0;
-
-      let running = true;
-
-      const render = () => {
-        if (!running) return;
-
-        // Animate hover value toward 1
-        hoverValue.current += (1 - hoverValue.current) * 0.08;
-        timeRef.current += 0.016;
-
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        gl.uniform2f(gl.getUniformLocation(program, "u_mouse"), mousePos.current.x, mousePos.current.y);
-        gl.uniform1f(gl.getUniformLocation(program, "u_radius"), 0.3);
-        gl.uniform1f(gl.getUniformLocation(program, "u_time"), timeRef.current);
-        gl.uniform1f(gl.getUniformLocation(program, "u_hover"), hoverValue.current);
-
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-        animationRef.current = requestAnimationFrame(render);
-      };
-
-      render();
-
-      return () => {
-        running = false;
-      };
-    }, 16);
-
-    return () => {
-      clearTimeout(initTimeout);
-      cancelAnimationFrame(animationRef.current);
-    };
-  }, [showCanvas]);
-
-  // Handle hover state with debounce to prevent rapid toggling
-  useEffect(() => {
-    if (isHovered) {
-      setShowCanvas(true);
-    } else {
-      // Small delay before hiding to allow fade out
-      const timeout = setTimeout(() => {
-        setShowCanvas(false);
-      }, 50);
-      return () => clearTimeout(timeout);
+    if (containerRef.current) {
+      containerRef.current.dataset.seed = seedRef.current.toString();
     }
-  }, [isHovered]);
+  }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    mousePos.current = {
-      x: (e.clientX - rect.left) / rect.width,
-      y: (e.clientY - rect.top) / rect.height,
-    };
+    updateMouse(
+      (e.clientX - rect.left) / rect.width,
+      (e.clientY - rect.top) / rect.height
+    );
   }, []);
 
-  // CSS mask using the generated dissolve mask
-  const maskStyle = dissolveMask ? {
-    WebkitMaskImage: `url(${dissolveMask})`,
-    WebkitMaskSize: '100% 100%',
-    WebkitMaskRepeat: 'no-repeat',
-    maskImage: `url(${dissolveMask})`,
-    maskSize: '100% 100%',
-    maskRepeat: 'no-repeat',
-  } as React.CSSProperties : {};
+  const handleMouseEnter = useCallback(() => {
+    if (containerRef.current && imgRef.current && imgRef.current.complete) {
+      activateCard(containerRef.current, imgRef.current);
+    }
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    deactivateCard();
+  }, []);
 
   return (
     <div
-      className="relative aspect-square"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      ref={containerRef}
+      className="relative aspect-square overflow-hidden rounded-lg"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
     >
-      {/* Base image with dissolve mask */}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         className="absolute inset-0 w-full h-full object-cover"
-        style={maskStyle}
       />
-      
-      {/* Canvas overlay for hover effect */}
-      {showCanvas && (
-        <canvas
-          ref={canvasRef}
-          width={512}
-          height={512}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-        />
-      )}
     </div>
   );
 }
