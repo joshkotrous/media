@@ -158,6 +158,87 @@ const fragmentShader = `
   }
 `;
 
+// Database icon shaders
+const dbVertexShader = `
+  attribute vec3 a_position;
+  
+  uniform float u_time;
+  uniform float u_aspect;
+  uniform mat4 u_rotationMatrix;
+  
+  varying float v_depth;
+  
+  void main() {
+    // Apply rotation
+    vec4 rotated = u_rotationMatrix * vec4(a_position, 1.0);
+    
+    // Aspect ratio correction
+    vec2 correctedPos = vec2(rotated.x / u_aspect, rotated.y);
+    
+    gl_Position = vec4(correctedPos, 0.0, 1.0);
+    v_depth = rotated.z;
+  }
+`;
+
+const dbFragmentShader = `
+  precision highp float;
+  
+  uniform vec3 u_color;
+  uniform float u_glowIntensity;
+  
+  varying float v_depth;
+  
+  void main() {
+    // Fade based on depth for 3D effect
+    float depthFade = smoothstep(-0.3, 0.3, v_depth) * 0.5 + 0.5;
+    float alpha = depthFade * 0.9;
+    
+    // Add glow
+    vec3 color = u_color + u_glowIntensity * 0.2;
+    
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+// Generate database icon - 3 stacked disks with connecting lines
+function generateDatabaseGeometry(radius: number, height: number, segments: number, diskCount: number): Float32Array {
+  const vertices: number[] = [];
+  
+  // Helper to add a circle at a given y position
+  const addCircle = (y: number) => {
+    for (let i = 0; i < segments; i++) {
+      const angle1 = (i / segments) * Math.PI * 2;
+      const angle2 = ((i + 1) / segments) * Math.PI * 2;
+      
+      vertices.push(
+        Math.cos(angle1) * radius, y, Math.sin(angle1) * radius,
+        Math.cos(angle2) * radius, y, Math.sin(angle2) * radius
+      );
+    }
+  };
+  
+  // Add 3 disks: top, middle, bottom
+  for (let d = 0; d < diskCount; d++) {
+    const y = height / 2 - (height / (diskCount - 1)) * d;
+    addCircle(y);
+  }
+  
+  // Add vertical lines connecting top to bottom
+  const verticalLineCount = 16;
+  for (let i = 0; i < verticalLineCount; i++) {
+    const angle = (i / verticalLineCount) * Math.PI * 2;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    
+    vertices.push(
+      x, height / 2, z,
+      x, -height / 2, z
+    );
+  }
+  
+  return new Float32Array(vertices);
+}
+
 interface ParticleCloudProps {
   particleCount?: number;
   colorScheme?: "aurora" | "sunset" | "ocean" | "cosmic";
@@ -316,16 +397,71 @@ export default function ParticleCloud({
     gl.enableVertexAttribArray(alphaLoc);
     gl.vertexAttribPointer(alphaLoc, 1, gl.FLOAT, false, 0, 0);
 
-    // Uniform locations
+    // Uniform locations for particles
     const timeLoc = gl.getUniformLocation(program, "u_time");
     const pixelRatioLoc = gl.getUniformLocation(program, "u_pixelRatio");
     const aspectLoc = gl.getUniformLocation(program, "u_aspect");
+
+    // ============ DATABASE ICON SETUP ============
+    
+    // Compile database shaders
+    const dbVShader = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(dbVShader, dbVertexShader);
+    gl.compileShader(dbVShader);
+    
+    if (!gl.getShaderParameter(dbVShader, gl.COMPILE_STATUS)) {
+      console.error("DB Vertex shader error:", gl.getShaderInfoLog(dbVShader));
+    }
+
+    const dbFShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(dbFShader, dbFragmentShader);
+    gl.compileShader(dbFShader);
+    
+    if (!gl.getShaderParameter(dbFShader, gl.COMPILE_STATUS)) {
+      console.error("DB Fragment shader error:", gl.getShaderInfoLog(dbFShader));
+    }
+
+    const dbProgram = gl.createProgram()!;
+    gl.attachShader(dbProgram, dbVShader);
+    gl.attachShader(dbProgram, dbFShader);
+    gl.linkProgram(dbProgram);
+
+    // Generate database geometry
+    const dbGeometry = generateDatabaseGeometry(0.12, 0.2, 32, 4);
+    const dbVertexCount = dbGeometry.length / 3;
+
+    const dbPositionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, dbPositionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, dbGeometry, gl.STATIC_DRAW);
+
+    // Database uniform locations
+    const dbTimeLoc = gl.getUniformLocation(dbProgram, "u_time");
+    const dbAspectLoc = gl.getUniformLocation(dbProgram, "u_aspect");
+    const dbRotationLoc = gl.getUniformLocation(dbProgram, "u_rotationMatrix");
+    const dbColorLoc = gl.getUniformLocation(dbProgram, "u_color");
+    const dbGlowLoc = gl.getUniformLocation(dbProgram, "u_glowIntensity");
 
     // Enable blending for soft particles
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending for glow effect
 
     startTimeRef.current = performance.now();
+
+    // Helper to create rotation matrix
+    const createRotationMatrix = (angleY: number, angleX: number): Float32Array => {
+      const cosY = Math.cos(angleY);
+      const sinY = Math.sin(angleY);
+      const cosX = Math.cos(angleX);
+      const sinX = Math.sin(angleX);
+      
+      // Combined Y and X rotation matrix
+      return new Float32Array([
+        cosY, sinX * sinY, -cosX * sinY, 0,
+        0, cosX, sinX, 0,
+        sinY, -sinX * cosY, cosX * cosY, 0,
+        0, 0, 0, 1
+      ]);
+    };
 
     const render = () => {
       const time = (performance.now() - startTimeRef.current) / 1000;
@@ -334,11 +470,67 @@ export default function ParticleCloud({
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
+      // ============ RENDER PARTICLES ============
+      gl.useProgram(program);
+      
+      // Re-bind particle buffers
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(posLoc);
+      
+      gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuffer);
+      gl.vertexAttribPointer(sizeLoc, 1, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(sizeLoc);
+      
+      gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+      gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(colorLoc);
+      
+      gl.bindBuffer(gl.ARRAY_BUFFER, alphaBuffer);
+      gl.vertexAttribPointer(alphaLoc, 1, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(alphaLoc);
+
       gl.uniform1f(timeLoc, time);
       gl.uniform1f(pixelRatioLoc, Math.min(window.devicePixelRatio, 2));
       gl.uniform1f(aspectLoc, aspect);
 
       gl.drawArrays(gl.POINTS, 0, particleCount);
+
+      // ============ RENDER DATABASE ICON ============
+      gl.useProgram(dbProgram);
+      
+      // Disable unused attributes
+      gl.disableVertexAttribArray(sizeLoc);
+      gl.disableVertexAttribArray(colorLoc);
+      gl.disableVertexAttribArray(alphaLoc);
+      
+      // Bind database position buffer
+      gl.bindBuffer(gl.ARRAY_BUFFER, dbPositionBuffer);
+      const dbPosLoc = gl.getAttribLocation(dbProgram, "a_position");
+      gl.vertexAttribPointer(dbPosLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(dbPosLoc);
+
+      // Slow rotation
+      const rotY = time * 0.3;
+      const rotX = Math.sin(time * 0.2) * 0.3 + 0.4; // Slight tilt
+      const rotationMatrix = createRotationMatrix(rotY, rotX);
+
+      gl.uniform1f(dbTimeLoc, time);
+      gl.uniform1f(dbAspectLoc, aspect);
+      gl.uniformMatrix4fv(dbRotationLoc, false, rotationMatrix);
+      
+      // Cyan/teal color matching aurora theme
+      const glow = Math.sin(time * 2) * 0.3 + 0.7;
+      gl.uniform3f(dbColorLoc, 0.3, 0.85, 0.8);
+      gl.uniform1f(dbGlowLoc, glow);
+
+      // Use regular alpha blending for lines
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.lineWidth(1.5);
+      gl.drawArrays(gl.LINES, 0, dbVertexCount);
+      
+      // Reset to additive blending
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 
       animationRef.current = requestAnimationFrame(render);
     };
@@ -349,8 +541,11 @@ export default function ParticleCloud({
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(animationRef.current);
       gl.deleteProgram(program);
+      gl.deleteProgram(dbProgram);
       gl.deleteShader(vShader);
       gl.deleteShader(fShader);
+      gl.deleteShader(dbVShader);
+      gl.deleteShader(dbFShader);
     };
   }, [particleCount, colorScheme]);
 
