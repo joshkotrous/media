@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import PhotoGrid from "./components/PhotoGrid";
+import StickyScrollSection from "./components/StickyScrollSection";
 
 type ColorData = {
   h: number;
@@ -123,21 +124,72 @@ export default async function Home() {
         </div>
       </div>
 
-      {/* Scrolling Content Section */}
-      <div className="scroll-content">
+      {/* Selected Works Section - becomes fixed when scrolled to bottom */}
+      <StickyScrollSection className="scroll-wrapper">
+        <div className="scroll-content">
+          <div className="px-4 sm:px-6 md:px-12 lg:px-20 py-12 md:py-24">
+            {/* Section Header */}
+            <div className="max-w-2xl mb-16">
+              <h2 className="text-3xl md:text-4xl text-[#1a1a1a] mb-4">
+                Selected Works
+              </h2>
+              <p className="text-[#1a1a1a]/60 text-lg leading-relaxed">
+                A personal collection from years of casual shooting.
+              </p>
+            </div>
+
+            {/* Photo Grid with Lightbox */}
+            <PhotoGrid photos={photos} />
+          </div>
+        </div>
+      </StickyScrollSection>
+
+      {/* Videos Section - Scrolls over Selected Works */}
+      <div className="videos-section">
         <div className="px-6 md:px-12 lg:px-20 py-16 md:py-24">
           {/* Section Header */}
           <div className="max-w-2xl mb-16">
-            <h2 className="text-3xl md:text-4xl text-[#1a1a1a] mb-4">
-              Selected Works
-            </h2>
+            <h2 className="text-3xl md:text-4xl text-[#1a1a1a] mb-4">Videos</h2>
             <p className="text-[#1a1a1a]/60 text-lg leading-relaxed">
-              A personal collection from years of casual shooting.
+              Motion work and video projects.
             </p>
           </div>
 
-          {/* Photo Grid with Lightbox */}
-          <PhotoGrid photos={photos} />
+          {/* Video Embeds */}
+          <div className="video-grid space-y-6">
+            <div className="video-container">
+              <iframe
+                src="https://www.youtube.com/embed/xNoOG3FzMA4"
+                title="Video 1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+            <div className="video-container">
+              <iframe
+                src="https://www.youtube.com/embed/bY_oveB7L9c"
+                title="Video 2"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+            <div className="video-container">
+              <iframe
+                src="https://www.youtube.com/embed/FMZ6bA3m_9A"
+                title="Video 3"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+            <div className="video-container">
+              <iframe
+                src="https://www.youtube.com/embed/ewjtF2XSzfw"
+                title="Video 4"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+          </div>
         </div>
       </div>
     </main>

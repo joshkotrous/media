@@ -153,11 +153,11 @@ export default function PhotoGrid({ photos }: PhotoGridProps) {
 
           {/* Image Container */}
           <div
-            className="flex items-center justify-center w-full h-full px-20 md:px-24 py-16"
+            className="flex items-center justify-center w-full h-full px-4 sm:px-12 md:px-24 py-12 md:py-16"
             onClick={(e) => e.stopPropagation()}
           >
             <div
-              className="relative w-full h-full max-w-[calc(100vw-10rem)] max-h-[calc(100vh-8rem)]"
+              className="relative w-full h-full max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-10rem)] max-h-[calc(100vh-6rem)] md:max-h-[calc(100vh-8rem)]"
               style={{
                 aspectRatio: `${photos[selectedIndex].width} / ${photos[selectedIndex].height}`,
               }}
