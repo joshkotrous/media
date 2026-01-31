@@ -2,7 +2,7 @@ import Image from "next/image";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
-import PhotoCard from "./components/PhotoCard";
+import PhotoGrid from "./components/PhotoGrid";
 
 type ColorData = {
   h: number;
@@ -38,24 +38,39 @@ function rgbToHsl(r: number, g: number, b: number): ColorData {
   return { h: h * 360, s: s * 100, l: l * 100 };
 }
 
-async function getPhotosSortedByColor() {
+export type PhotoData = {
+  file: string;
+  width: number;
+  height: number;
+};
+
+async function getPhotosSortedByColor(): Promise<PhotoData[]> {
   const photosDir = path.join(process.cwd(), "public/photos");
   const files = fs
     .readdirSync(photosDir)
     .filter((file) => /\.webp$/i.test(file));
 
-  // Extract dominant color from each image
-  const photosWithColors = await Promise.all(
+  // Extract dominant color and dimensions from each image
+  const photosWithData = await Promise.all(
     files.map(async (file) => {
       const filePath = path.join(photosDir, file);
-      const { dominant } = await sharp(filePath).stats();
+      const image = sharp(filePath);
+      const [{ dominant }, metadata] = await Promise.all([
+        image.stats(),
+        image.metadata(),
+      ]);
       const color = rgbToHsl(dominant.r, dominant.g, dominant.b);
-      return { file, color };
+      return {
+        file,
+        color,
+        width: metadata.width || 1,
+        height: metadata.height || 1,
+      };
     })
   );
 
   // Sort by lightness group, then hue, then saturation
-  return photosWithColors
+  return photosWithData
     .sort((a, b) => {
       const colorA = a.color;
       const colorB = b.color;
@@ -75,7 +90,7 @@ async function getPhotosSortedByColor() {
       // Finally by lightness
       return colorA.l - colorB.l;
     })
-    .map((p) => p.file);
+    .map((p) => ({ file: p.file, width: p.width, height: p.height }));
 }
 
 export default async function Home() {
@@ -121,17 +136,8 @@ export default async function Home() {
             </p>
           </div>
 
-          {/* Photo Grid */}
-          <div className="photo-grid">
-            {photos.map((photo, index) => (
-              <PhotoCard
-                key={photo}
-                src={`/photos/${photo}`}
-                alt={`Photo ${index + 1}`}
-                priority={index < 6}
-              />
-            ))}
-          </div>
+          {/* Photo Grid with Lightbox */}
+          <PhotoGrid photos={photos} />
         </div>
       </div>
     </main>
