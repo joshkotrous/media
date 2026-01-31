@@ -3,7 +3,6 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import PhotoCard from "./components/PhotoCard";
-import ParticleCloud from "./components/ParticleCloud";
 
 type ColorData = {
   h: number;
@@ -52,7 +51,7 @@ async function getPhotosSortedByColor() {
       const { dominant } = await sharp(filePath).stats();
       const color = rgbToHsl(dominant.r, dominant.g, dominant.b);
       return { file, color };
-    }),
+    })
   );
 
   // Sort by lightness group, then hue, then saturation
@@ -84,17 +83,55 @@ export default async function Home() {
 
   return (
     <main>
-      {/* Hero Section with Particle Cloud */}
-      <div className="relative h-screen w-full bg-black overflow-hidden">
-        <ParticleCloud 
-          particleCount={10000} 
-          colorScheme="aurora" 
-          className="absolute inset-0"
+      {/* Fixed Hero Background */}
+      <div className="hero-fixed">
+        {/* Background Image */}
+        <Image
+          src="/photos/5.26.19-3.webp"
+          alt="Background"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
         />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <h1 className="text-white text-6xl font-light tracking-wider opacity-80">
-            {/* Optional title overlay */}
+        {/* Content */}
+        <div className="relative h-full w-full flex flex-col items-center justify-center px-8">
+          <h1 className="text-[#1a1a1a] text-5xl md:text-7xl lg:text-8xl tracking-tight text-center leading-tight">
+            Media
           </h1>
+          <p className="text-[#1a1a1a]/60 text-lg md:text-xl mt-6 tracking-wide italic">
+            by Josh Kotrous
+          </p>
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2">
+            <div className="w-[1px] h-16 bg-[#1a1a1a]/30 animate-pulse" />
+          </div>
+        </div>
+      </div>
+
+      {/* Scrolling Content Section */}
+      <div className="scroll-content">
+        <div className="px-6 md:px-12 lg:px-20 py-16 md:py-24">
+          {/* Section Header */}
+          <div className="max-w-2xl mb-16">
+            <h2 className="text-3xl md:text-4xl text-[#1a1a1a] mb-4">
+              Selected Works
+            </h2>
+            <p className="text-[#1a1a1a]/60 text-lg leading-relaxed">
+              A personal collection from years of casual shooting.
+            </p>
+          </div>
+
+          {/* Photo Grid */}
+          <div className="photo-grid">
+            {photos.map((photo, index) => (
+              <PhotoCard
+                key={photo}
+                src={`/photos/${photo}`}
+                alt={`Photo ${index + 1}`}
+                priority={index < 6}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </main>
