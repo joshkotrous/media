@@ -100,7 +100,7 @@ export default async function Home() {
   return (
     <main>
       {/* Fixed Hero Background */}
-      <div className="hero-fixed">
+      <div className="fixed top-0 left-0 w-full h-screen z-0">
         {/* Background Image */}
         <Image
           src="/photos/5.26.19-3.webp"
@@ -119,14 +119,14 @@ export default async function Home() {
             by Josh Kotrous
           </p>
           <div className="absolute bottom-12 left-1/2 -translate-x-1/2">
-            <div className="w-[1px] h-16 bg-[#1a1a1a]/30 animate-pulse" />
+            <div className="w-px h-16 bg-[#1a1a1a]/30 animate-pulse" />
           </div>
         </div>
       </div>
 
       {/* Selected Works Section - becomes fixed when scrolled to bottom */}
-      <StickyScrollSection className="scroll-wrapper">
-        <div className="scroll-content">
+      <StickyScrollSection className="relative mt-[100vh] w-full max-w-[100vw] overflow-x-hidden">
+        <div className="bg-background rounded-t-[2.5rem] max-sm:rounded-t-3xl shadow-[0_-20px_60px_rgba(0,0,0,0.15)] w-full max-w-full overflow-x-hidden">
           <div className="px-4 sm:px-6 md:px-12 lg:px-20 py-12 md:py-24">
             {/* Section Header */}
             <div className="max-w-2xl mb-16">
@@ -145,7 +145,7 @@ export default async function Home() {
       </StickyScrollSection>
 
       {/* Videos Section - Scrolls over Selected Works */}
-      <div className="videos-section">
+      <div className="relative z-20 bg-[#e8e6e3] rounded-t-[2.5rem] max-sm:rounded-t-3xl min-h-screen shadow-[0_-20px_60px_rgba(0,0,0,0.2)]">
         <div className="px-6 md:px-12 lg:px-20 py-16 md:py-24">
           {/* Section Header */}
           <div className="max-w-2xl mb-16">
@@ -156,8 +156,8 @@ export default async function Home() {
           </div>
 
           {/* Video Embeds */}
-          <div className="video-grid space-y-6">
-            <div className="video-container">
+          <div className="flex flex-col gap-8">
+            <div className="relative w-full max-w-[1000px] aspect-video rounded-2xl max-sm:rounded-xl overflow-hidden bg-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-none">
               <iframe
                 src="https://www.youtube.com/embed/xNoOG3FzMA4"
                 title="Video 1"
@@ -165,7 +165,7 @@ export default async function Home() {
                 allowFullScreen
               />
             </div>
-            <div className="video-container">
+            <div className="relative w-full max-w-[1000px] aspect-video rounded-2xl max-sm:rounded-xl overflow-hidden bg-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-none">
               <iframe
                 src="https://www.youtube.com/embed/bY_oveB7L9c"
                 title="Video 2"
@@ -173,7 +173,7 @@ export default async function Home() {
                 allowFullScreen
               />
             </div>
-            <div className="video-container">
+            <div className="relative w-full max-w-[1000px] aspect-video rounded-2xl max-sm:rounded-xl overflow-hidden bg-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-none">
               <iframe
                 src="https://www.youtube.com/embed/FMZ6bA3m_9A"
                 title="Video 3"
@@ -181,7 +181,7 @@ export default async function Home() {
                 allowFullScreen
               />
             </div>
-            <div className="video-container">
+            <div className="relative w-full max-w-[1000px] aspect-video rounded-2xl max-sm:rounded-xl overflow-hidden bg-[#1a1a1a] shadow-[0_8px_30px_rgba(0,0,0,0.12)] [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-none">
               <iframe
                 src="https://www.youtube.com/embed/ewjtF2XSzfw"
                 title="Video 4"

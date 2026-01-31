@@ -61,7 +61,7 @@ export default function PhotoGrid({ photos }: PhotoGridProps) {
   return (
     <>
       {/* Photo Grid */}
-      <div className="photo-grid">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 lg:gap-4 w-full max-w-full min-w-0 box-border overflow-hidden *:min-w-0 *:overflow-hidden">
         {photos.map((photo, index) => (
           <div key={photo.file} onClick={() => openLightbox(index)}>
             <PhotoCard
